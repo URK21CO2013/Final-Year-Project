@@ -1,0 +1,5 @@
+# SDN Setup (Open vSwitch + OpenDaylight + Flow Rules)
+# Install Open vSwitch (OVS)
+sudo apt update
+sudo apt install openvswitch-switch
+# Create an OVS Bridge
