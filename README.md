@@ -1,126 +1,172 @@
-# Final-Year-Project
-# Authentication script used in sdp(Role-based Access control)
-import mysql.connector
-import getpass
-import datetime
-import bcrypt  # Make sure to install: pip install bcrypt
+# SDN Setup (Open vSwitch + OpenDaylight + Flow Rules)
+# Install Open vSwitch (OVS)
+sudo apt update
+sudo apt install openvswitch-switch
 
-# Connect to the database
-db = mysql.connector.connect(
-    host="localhost",
-    user="sdp_controller",
-    password="Password@123",
-    database="sdp_database_new"
-)
+# Create an OVS Bridge
+sudo ovs-vsctl add-br br0
 
-cursor = db.cursor()
+sudo ovs-vsctl add-br br1
 
-# User Login Input
-username = input("Enter username: ")
-password = getpass.getpass("Enter password: ")
+# Add Ports to the Bridge
+sudo ip tuntap add mode tap tap0
 
-# Fetch user_id, password_hash, failed_attempts, role, account_locked
-cursor.execute("SELECT id, password_hash, failed_attempts, role, account_locked FROM users WHERE username = %s", (username,))
-result = cursor.fetchone()
+sudo ip tuntap add mode tap tap1
 
-if result:
-    user_id, stored_password_hash, failed_attempts, role, account_locked = result
+sudo ip tuntap add mode tap tap2
 
-  if role == 'admin':
-      lockout_duration = 30  # Admin accounts unlock after 30 minutes
-  elif role == 'guest':
-      lockout_duration = 5  # Guest accounts unlock after 10 minutes
-  else:
-      lockout_duration = 15  # Employee (or default) accounts unlock after 15 minutes
+sudo ip tuntap add mode tap tap3
 
-  minutes_since_locked = 0
+sudo ip tuntap add mode tap tap4
 
-  # Check if account is locked
-  if account_locked:
-      # Check if lockout duration has passed
-      cursor.execute("SELECT TIMESTAMPDIFF(MINUTE, lockout_time, NOW()) FROM users WHERE id = %s", (user_id,))
-      minutes_since_locked = cursor.fetchone()[0]
+sudo ip tuntap add mode tap tap5
 
-  if minutes_since_locked is not None and minutes_since_locked >= lockout_duration:
-      # Unlock the account only if enough time has passed
-      cursor.execute("UPDATE users SET account_locked = 0, failed_attempts = 0, lockout_time = NULL WHERE id = %s", (user_id,))
-      db.commit()
-      print("✅ Account unlocked. You can now log in.")
-      exit()
+sudo ip tuntap add mode tap tap6
 
-  if account_locked:
-      print("❌ Account is locked due to too many failed login attempts.")
-      exit()
+sudo ip tuntap add mode tap tap7
 
-  else:
-      # Determine lockout threshold based on role
-      if role == 'admin':
-          lockout_threshold = 3  # Admin gets locked after 3 failed attempts
-      elif role == 'guest':
-          lockout_threshold = 7  # Guest gets locked after 7 failed attempts
-      else:
-          lockout_threshold = 5  # Default lockout threshold for other roles
+# Set the interfaces up
+sudo ip link set tap0 up
 
-  # Check if the password matches (hash comparison)
-  if bcrypt.checkpw(password.encode('utf-8'), stored_password_hash.encode('utf-8')):
-      print("✅ Login Successful!")
+sudo ip link set tap1 up
 
-  # Reset failed_attempts to 0
-  cursor.execute("UPDATE users SET failed_attempts = 0 WHERE username = %s", (username,))
-  db.commit()
+sudo ip link set tap2 up
 
-  # Insert into open_connection table
-  ip_address = "127.0.0.1"  # Replace with actual IP if needed
-  status = "active"
-  cursor.execute(
-  "INSERT INTO open_connection (user_id, ip_address, status) VALUES (%s, %s, %s)",
-      (user_id, ip_address, status),
-          )
+sudo ip link set tap3 up
 
-  # Insert into access_logs table
-  event_type = "Login Success"
-  event_time = datetime.datetime.now()
-  cursor.execute(
-      "INSERT INTO access_logs (user_id, event_type, ip_address, event_time, status) VALUES (%s, %s, %s, %s, %s)",
-        (user_id, event_type, ip_address, event_time, status),
-      )
+sudo ip link set tap4 up
 
-  db.commit()  # Commit all successful login actions
-  print("[DEBUG] Logged successful login.")
+sudo ip link set tap5 up
 
-  # Role-based actions
-  if role == 'admin':
-      print("Welcome Admin! You have full access.")
-      # Admin-specific logic here (if any)
-  elif role == 'guest':
-      print("Welcome Guest! You have limited access.")
-      # Guest-specific logic here (if any)
-  else:
-      print(f"Welcome {role} user!")
-      # Any other role-specific logic
+sudo ip link set tap6 up
 
-  else:
-      print("❌ Incorrect Password!")
+sudo ip link set tap7 up
 
-  # Increment failed_attempts in users table
-  new_failed_attempts = failed_attempts + 1
-  cursor.execute("UPDATE users SET failed_attempts = %s WHERE username = %s", (new_failed_attempts, username))
+# Add the devices to bridges
+sudo ovs-vsctl add-port br0 tap0
 
-  # Lock account if failed attempts exceed role-specific threshold
-  if new_failed_attempts >= lockout_threshold:
-      cursor.execute("UPDATE users SET account_locked = TRUE WHERE username = %s", (username,))
+sudo ovs-vsctl add-port br0 tap1
 
-  # Log failed login attempt
-  cursor.execute(
-      "INSERT INTO access_logs (user_id, event_type, ip_address, event_time, status) VALUES (%s, %s, %s, %s, %s)",
-      (user_id, "Login Failed", "192.168.1.100", datetime.datetime.now(), "failed"),
-        )
+sudo ovs-vsctl add-port br0 tap2
 
-  db.commit()  # Commit all failed login actions
-        print(f"[DEBUG] Failed attempts updated to {new_failed_attempts}")
+sudo ovs-vsctl add-port br0 tap3
 
-else:
-    print("❌ User not found!")
+sudo ovs-vsctl add-port br1 tap4
 
-cursor.close()
-db.close()
+sudo ovs-vsctl add-port br1 tap5
+
+sudo ovs-vsctl add-port br1 tap6
+
+sudo ovs-vsctl add-port br1 tap7
+
+# Connect OVS to OpenDaylight Controller
+sudo ovs-vsctl set-controller br0 tcp:127.0.0.1:6653
+
+sudo ovs-vsctl set-controller br1 tcp:127.0.0.1:6653
+
+# Install OpenDaylight (Silicon Release)
+# Download OpenDaylight Silicon
+wget https://nexus.opendaylight.org/content/repositories/opendaylight-release/org/opendaylight/integration/distribution-karaf/0.14.0/distribution-karaf-0.14.0.tar.gz
+
+# Extract it
+tar -xvzf distribution-karaf-0.14.0.tar.gz
+
+cd distribution-karaf-0.14.0
+
+# Start OpenDaylight
+./bin/karaf
+
+# Inside karaf
+feature:install odl-l2switch-switch odl-openflowplugin-flow-services-ui
+
+# Install and Configure Flow Rules Manually (Static Microsegmentation)
+# Example Flow rules
+# Allow communication between tap0 and tap1
+sudo ovs-ofctl add-flow br0 "priority=1000,in_port=1,dl_dst=<tap1_mac>,actions=output:2"
+
+sudo ovs-ofctl add-flow br0 "priority=1000,in_port=2,dl_dst=<tap0_mac>,actions=output:1"
+
+# Deny tap5 to tap7
+sudo ovs-ofctl add-flow br0 "priority=1000,in_port=6,dl_dst=<tap7_mac>,actions=drop"
+
+# Samba Active Directory Setup (for SDP_INTERNAL domain)
+# Install Samba AD Packages
+sudo apt update
+
+sudo apt install samba krb5-config krb5-user winbind smbclient
+
+[Realm: SDP.INTERNAL
+
+Domain: SDP
+
+KDC: 127.0.0.1]
+
+# Provision Samba as an AD Domain Controller
+sudo samba-tool domain provision --use-rfc2307 --interactive
+
+[Realm: SDP.INTERNAL
+
+Domain: SDP
+
+DNS Backend: SAMBA_INTERNAL
+
+Password_admin12]
+
+# Start and Enable Samba
+sudo systemctl stop smbd nmbd winbind
+
+sudo systemctl unmask samba-ad-dc
+
+sudo systemctl enable samba-ad-dc
+
+sudo systemctl start samba-ad-dc
+
+# Create Groups in Samba AD
+sudo samba-tool group add admin_group
+
+sudo samba-tool group add user_group
+
+sudo samba-tool group add guest_group
+
+# Add Users to Groups
+# Add tap0 and tap1 to admin_group
+sudo samba-tool group addmembers admin_group tap0
+
+sudo samba-tool group addmembers admin_group tap4
+
+# Add tap2, tap3, tap4 to user_group
+sudo samba-tool group addmembers user_group tap1
+
+sudo samba-tool group addmembers user_group tap2
+
+sudo samba-tool group addmembers user_group tap3
+
+sudo samba-tool group addmembers user_group tap5
+
+sudo samba-tool group addmembers user_group tap6
+
+# tap7 to guest_group
+sudo samba-tool group addmembers guest_group tap7
+
+# Database Configuration: MariaDB
+Step 1: Install MariaDB
+
+sudo apt update
+
+sudo apt install mariadb-server
+
+sudo systemctl start mariadb
+
+sudo systemctl enable mariadb
+
+Step 2: Create Database and Tables
+# Log into MariaDB
+
+sudo mysql -u root -p
+
+# Create and use the database
+CREATE DATABASE sdp_database_new;
+
+USE sdp_database_new;
+
+[Connect database to sdp + samba AD for real-time user login updates using the Authentication script]
